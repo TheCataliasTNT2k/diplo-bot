@@ -106,7 +106,7 @@ class ChannelMirror(Cog):
         await ctx.respond(f"Deleted mirror from {source_channel.mention} to {destination_channel.mention}", ephemeral = True)
 
     @channelmirror.command(name = "delete_by_number", description = "Delete a channel to mirror")
-    async def list(self, ctx,
+    async def delete_by_number(self, ctx,
             link_number: Option(str, "The Link number to delete")
         ):
         await ctx.respond("Deleting...", ephemeral = True)
@@ -187,7 +187,7 @@ class ChannelMirror(Cog):
         await ctx.edit(content = message)
 
     @channelmirror.command(name = "server", description = "List all Servers of wich Bot is Member")
-    async def list(self, ctx):
+    async def server(self, ctx):
         server = self.bot.guilds
         message = "Servers:\n"
         i = 0
