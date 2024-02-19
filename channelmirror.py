@@ -3,6 +3,8 @@ from discord import (
     TextChannel,
     Permissions
 )
+from discord.ui import View, Button, button
+from discord import ButtonStyle, Interaction
 from discord.commands import Option
 from discord.ext.commands import Cog
 import sqlite3
@@ -34,6 +36,14 @@ class ChannelMirror(Cog):
             )
             """
         )
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS webhooks (
+                guild_id INTEGER,
+                channel_id INTEGER
+            )
+            """
+        )
         self.db.commit()
     channelmirror = SlashCommandGroup(name = "channelmirror", description = "Commands for channel mirroring", default_member_permissions = Permissions(manage_guild = True))
 
@@ -55,6 +65,19 @@ class ChannelMirror(Cog):
         except:
             await ctx.respond("Destination channel not found", ephemeral = True)
             return
+        if not self.cursor.execute(
+            """
+            SELECT * FROM webhooks WHERE guild_id = ? AND channel_id = ?
+            """,
+            (destination_guild.id, destination_channel.id)
+        ).fetchone():
+            await destination_channel.create_webhook(name = "ChannelMirror", reason = "ChannelMirror webhook creation")
+            self.cursor.execute(
+                """
+                INSERT INTO webhooks (guild_id, channel_id) VALUES (?, ?)
+                """,
+                (destination_guild.id, destination_channel.id)
+            )
         self.cursor.execute(
             """
             INSERT INTO channelmirror (source_guild_id, source_channel_id, destination_guild_id, destination_channel_id) VALUES (?, ?, ?, ?)
@@ -62,7 +85,6 @@ class ChannelMirror(Cog):
             (source_channel.guild.id, source_channel.id, destination_guild.id, destination_channel.id)
         )
         self.db.commit()
-        await destination_channel.create_webhook(name = "ChannelMirror", reason = "ChannelMirror webhook creation")
         await ctx.respond(f"Created a mirror from {source_channel.mention} to {destination_channel.mention}", ephemeral = True)
 
     @channelmirror.command(name = "delete", description = "Delete a channel to mirror")
@@ -97,12 +119,24 @@ class ChannelMirror(Cog):
             """,
             (source_channel.guild.id, source_channel.id, destination_channel_guild_id, destination_channel_id)
         )
+        if not self.cursor.execute(
+            """
+            SELECT * FROM channelmirror WHERE destination_guild_id = ? AND destination_channel_id = ?
+            """,
+            (destination_guild.id, destination_channel.id)
+        ).fetchone():
+            webhooks = await destination_channel.webhooks()
+            for webhook in webhooks:
+                if webhook.name == "ChannelMirror":
+                    await webhook.delete()
+                    break
+            self.cursor.execute(
+                """
+                DELETE FROM webhooks WHERE guild_id = ? AND channel_id = ?
+                """,
+                (destination_guild.id, destination_channel.id)
+            )
         self.db.commit()
-        webhooks = await destination_channel.webhooks()
-        for webhook in webhooks:
-            if webhook.name == "ChannelMirror":
-                await webhook.delete()
-                break
         await ctx.respond(f"Deleted mirror from {source_channel.mention} to {destination_channel.mention}", ephemeral = True)
 
     @channelmirror.command(name = "delete_by_number", description = "Delete a channel to mirror")
@@ -146,6 +180,23 @@ class ChannelMirror(Cog):
                         """,
                         (source_guild.id, source_channel.id, destination_guild.id, destination_channel.id)
                     )
+                    if not self.cursor.execute(
+                        """
+                        SELECT * FROM channelmirror WHERE destination_guild_id = ? AND destination_channel_id = ?
+                        """,
+                        (destination_guild.id, destination_channel.id)
+                    ).fetchone():
+                        webhooks = await destination_channel.webhooks()
+                        for webhook in webhooks:
+                            if webhook.name == "ChannelMirror":
+                                await webhook.delete()
+                                break
+                        self.cursor.execute(
+                            """
+                            DELETE FROM webhooks WHERE guild_id = ? AND channel_id = ?
+                            """,
+                            (destination_guild.id, destination_channel.id)
+                        )
                     self.db.commit()
                     await ctx.edit(content = f"Deleted mirror from {source_channel.mention} to {destination_channel.mention}")
                     return
@@ -160,7 +211,7 @@ class ChannelMirror(Cog):
         )
         mirrors = self.cursor.fetchall()
         if not mirrors:
-            await ctx.respond("No mirrors found", ephemeral = True)
+            await ctx.edit(content = "No mirrors found")
             return
         message = "Channel Mirrors:\n"
         i = 0
@@ -195,6 +246,10 @@ class ChannelMirror(Cog):
             i += 1
             message += f"{i}. {s.name}\n"
         await ctx.respond(content = message, ephemeral = True)
+
+    @channelmirror.command(name = "nuke", description = "List all Servers of wich Bot is Member")
+    async def nuke(self, ctx):
+        await ctx.respond("Do you really want to Nuke all Channel Mirrors?", ephemeral = True, view = NukeView(self.bot, self.db, self.cursor))
     
     @Cog.listener("on_message")
     async def on_message(self, message):
@@ -297,6 +352,55 @@ class ChannelMirror(Cog):
                     webhk = webhook
                     break
             await webhk.delete_message(messageid[5])
+
+class NukeView(View):
+    def __init__(self, bot, db, cursor):
+        super().__init__()
+        self.bot = bot
+        self.db = db
+        self.cursor = cursor
+
+    @button(label = "Yes", style = ButtonStyle.danger, custom_id = "yes")
+    async def yes(self, button: Button, interaction: Interaction):
+        for webhook in self.cursor.execute(
+            """
+            SELECT * FROM webhooks
+            """
+        ).fetchall():
+            try:
+                destination_guild = await self.bot.fetch_guild(webhook[0])
+            except:
+                continue
+            try:
+                destination_channel = await destination_guild.fetch_channel(webhook[1])
+            except:
+                continue
+            webhooks = await destination_channel.webhooks()
+            for webhook in webhooks:
+                if webhook.name == "ChannelMirror":
+                    await webhook.delete()
+                    break
+        self.cursor.execute(
+            """
+            DELETE FROM channelmirror
+            """
+        )
+        self.cursor.execute(
+            """
+            DELETE FROM messageids
+            """
+        )
+        self.cursor.execute(
+            """
+            DELETE FROM webhooks
+            """
+        )
+        self.db.commit()
+        await interaction.response.edit_message(content = "Nuked all mirrors", view = None)
+
+    @button(label = "No", style = ButtonStyle.success, custom_id = "no")
+    async def no(self, button: Button, interaction: Interaction):
+        await interaction.response.edit_message(content = "Canceled", view = None)
 
 def setup(bot):
     bot.add_cog(ChannelMirror(bot))
