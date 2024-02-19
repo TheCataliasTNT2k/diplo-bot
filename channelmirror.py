@@ -46,7 +46,7 @@ class ChannelMirror(Cog):
             """
         )
         self.db.commit()
-    channelmirror = SlashCommandGroup(name = "channelmirror", description = "Commands for channel mirroring", default_member_permissions = Permissions(manage_guild = True))
+    channelmirror = SlashCommandGroup(name = "channelmirror", description = "Commands for channel mirroring", default_member_permissions = Permissions(administrator = True))
 
     @channelmirror.command(name = "create", description = "Create a channel to mirror")
     async def create(self, ctx,
@@ -264,21 +264,24 @@ class ChannelMirror(Cog):
             except:
                 continue
             webhooks = await destination_channel.webhooks()
-            webhk = None
             for webhook in webhooks:
-                if webhook.name == "ChannelMirror":
-                    webhk = webhook
-                    break
-            for attachment in message.attachments:
-                repl_message = await webhk.send(content = attachment.url, username = nick + " from " + message.guild.name, avatar_url = message.author.avatar.url, wait = True)
-            if content:
-                repl_message = await webhk.send(content = content, username = nick + " from " + message.guild.name, avatar_url = message.author.avatar.url, wait = True)
-                self.cursor.execute(
+                if webhook.id == self.cursor.execute(
                     """
-                    Insert INTO messageids (source_guild_id, source_channel_id, source_message_id, destination_guild_id, destination_channel_id, destination_message_id) VALUES (?, ?, ?, ?, ?, ?)
+                    SELECT webhook_id FROM webhooks WHERE guild_id = ? AND channel_id = ?
                     """,
-                    (message.guild.id, message.channel.id, message.id, repl_message.guild.id, repl_message.channel.id, repl_message.id)
-                )
+                    (destination_guild.id, destination_channel.id)
+                ).fetchone()[0]:
+                    for attachment in message.attachments:
+                        repl_message = await webhook.send(content = attachment.url, username = nick + " from " + message.guild.name, avatar_url = message.author.avatar.url)
+                    if content:
+                        repl_message = await webhook.send(content = content, username = nick + " from " + message.guild.name, avatar_url = message.author.avatar.url, wait = True)
+                        self.cursor.execute(
+                            """
+                            Insert INTO messageids (source_guild_id, source_channel_id, source_message_id, destination_guild_id, destination_channel_id, destination_message_id) VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (message.guild.id, message.channel.id, message.id, repl_message.guild.id, repl_message.channel.id, repl_message.id)
+                        )
+                    break
         self.db.commit()
 
     @Cog.listener("on_message_edit")
@@ -299,12 +302,15 @@ class ChannelMirror(Cog):
             except:
                 continue
             webhooks = await destination_channel.webhooks()
-            webhk = None
             for webhook in webhooks:
-                if webhook.name == "ChannelMirror":
-                    webhk = webhook
+                if webhook.id == self.cursor.execute(
+                    """
+                    SELECT webhook_id FROM webhooks WHERE guild_id = ? AND channel_id = ?
+                    """,
+                    (destination_guild.id, destination_channel.id)
+                ).fetchone()[0]:
+                    await webhook.edit_message(messageid[5], content = after.content)
                     break
-            await webhk.edit_message(messageid[5], content = after.content)
 
     @Cog.listener("on_message_delete")
     async def on_message_delete(self, message):
@@ -324,12 +330,15 @@ class ChannelMirror(Cog):
             except:
                 continue
             webhooks = await destination_channel.webhooks()
-            webhk = None
             for webhook in webhooks:
-                if webhook.name == "ChannelMirror":
-                    webhk = webhook
+                if webhook.id == self.cursor.execute(
+                    """
+                    SELECT webhook_id FROM webhooks WHERE guild_id = ? AND channel_id = ?
+                    """,
+                    (destination_guild.id, destination_channel.id)
+                ).fetchone()[0]:
+                    await webhook.delete_message(messageid[5])
                     break
-            await webhk.delete_message(messageid[5])
 
 class NukeView(View):
     def __init__(self, bot, db, cursor):
@@ -352,7 +361,12 @@ class NukeView(View):
                 continue
             webhooks = await destination_channel.webhooks()
             for webhook in webhooks:
-                if webhook.name == "ChannelMirror":
+                if webhook.id == self.cursor.execute(
+                    """
+                    SELECT webhook_id FROM webhooks WHERE guild_id = ? AND channel_id = ?
+                    """,
+                    (destination_guild.id, destination_channel.id)
+                ).fetchone()[0]:
                     await webhook.delete()
                     break
         self.cursor.execute(
