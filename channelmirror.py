@@ -40,7 +40,8 @@ class ChannelMirror(Cog):
             """
             CREATE TABLE IF NOT EXISTS webhooks (
                 guild_id INTEGER,
-                channel_id INTEGER
+                channel_id INTEGER,
+                webhook_id INTEGER
             )
             """
         )
@@ -55,13 +56,13 @@ class ChannelMirror(Cog):
         ):
         destination_guild = None
         try:
-            destination_guild = await self.bot.fetch_guild(destination_channel_guild_id)
+            destination_guild = await get_or_fetch_guild(self.bot, destination_channel_guild_id)
         except:
             await ctx.respond("Destination guild not found", ephemeral = True)
             return
         destination_channel = None
         try:
-            destination_channel = await destination_guild.fetch_channel(destination_channel_id)
+            destination_channel = await get_or_fetch_channel(destination_guild, destination_channel_id)
         except:
             await ctx.respond("Destination channel not found", ephemeral = True)
             return
@@ -71,12 +72,12 @@ class ChannelMirror(Cog):
             """,
             (destination_guild.id, destination_channel.id)
         ).fetchone():
-            await destination_channel.create_webhook(name = "ChannelMirror", reason = "ChannelMirror webhook creation")
+            webhook = await destination_channel.create_webhook(name = "ChannelMirror", reason = "ChannelMirror webhook creation")
             self.cursor.execute(
                 """
-                INSERT INTO webhooks (guild_id, channel_id) VALUES (?, ?)
+                INSERT INTO webhooks (guild_id, channel_id, webhook_id) VALUES (?, ?, ?)
                 """,
-                (destination_guild.id, destination_channel.id)
+                (destination_guild.id, destination_channel.id, webhook.id)
             )
         self.cursor.execute(
             """
@@ -95,13 +96,13 @@ class ChannelMirror(Cog):
         ):
         destination_guild = None
         try:
-            destination_guild = await self.bot.fetch_guild(destination_channel_guild_id)
+            destination_guild = await get_or_fetch_guild(self.bot, destination_channel_guild_id)
         except:
             await ctx.respond("Destination guild not found", ephemeral = True)
             return
         destination_channel = None
         try:
-            destination_channel = await destination_guild.fetch_channel(destination_channel_id)
+            destination_channel = await get_or_fetch_channel(destination_guild, destination_channel_id)
         except:
             await ctx.respond("Destination channel not found", ephemeral = True)
             return
@@ -127,7 +128,12 @@ class ChannelMirror(Cog):
         ).fetchone():
             webhooks = await destination_channel.webhooks()
             for webhook in webhooks:
-                if webhook.name == "ChannelMirror":
+                if webhook.id == self.cursor.execute(
+                    """
+                    SELECT webhook_id FROM webhooks WHERE guild_id = ? AND channel_id = ?
+                    """,
+                    (destination_guild.id, destination_channel.id)
+                ).fetchone()[0]:
                     await webhook.delete()
                     break
             self.cursor.execute(
@@ -156,19 +162,10 @@ class ChannelMirror(Cog):
         i = 0
         for mirror in mirrors:
             try:
-                source_guild = await self.bot.fetch_guild(mirror[0])
-            except:
-                continue
-            try:
-                source_channel = await source_guild.fetch_channel(mirror[1])
-            except:
-                continue
-            try:
-                destination_guild = await self.bot.fetch_guild(mirror[2])
-            except:
-                continue
-            try:
-                destination_channel = await destination_guild.fetch_channel(mirror[3])
+                source_guild = await get_or_fetch_guild(self.bot, mirror[0])
+                source_channel = await get_or_fetch_channel(source_guild, mirror[1])
+                destination_guild = await get_or_fetch_guild(self.bot, mirror[2])
+                destination_channel = await get_or_fetch_channel(destination_guild, mirror[3])
             except:
                 continue
             if source_guild == ctx.guild or destination_guild == ctx.guild:
@@ -188,7 +185,12 @@ class ChannelMirror(Cog):
                     ).fetchone():
                         webhooks = await destination_channel.webhooks()
                         for webhook in webhooks:
-                            if webhook.name == "ChannelMirror":
+                            if webhook.id == self.cursor.execute(
+                                """
+                                SELECT webhook_id FROM webhooks WHERE guild_id = ? AND channel_id = ?
+                                """,
+                                (destination_guild.id, destination_channel.id)
+                            ).fetchone()[0]:
                                 await webhook.delete()
                                 break
                         self.cursor.execute(
@@ -217,19 +219,10 @@ class ChannelMirror(Cog):
         i = 0
         for mirror in mirrors:
             try:
-                source_guild = await self.bot.fetch_guild(mirror[0])
-            except:
-                continue
-            try:
-                source_channel = await source_guild.fetch_channel(mirror[1])
-            except:
-                continue
-            try:
-                destination_guild = await self.bot.fetch_guild(mirror[2])
-            except:
-                continue
-            try:
-                destination_channel = await destination_guild.fetch_channel(mirror[3])
+                source_guild = await get_or_fetch_guild(self.bot, mirror[0])
+                source_channel = await get_or_fetch_channel(source_guild, mirror[1])
+                destination_guild = await get_or_fetch_guild(self.bot, mirror[2])
+                destination_channel = await get_or_fetch_channel(destination_guild, mirror[3])
             except:
                 continue
             if source_guild == ctx.guild or destination_guild == ctx.guild:
@@ -266,11 +259,8 @@ class ChannelMirror(Cog):
         nick = message.author.nick or message.author.display_name
         for mirror in mirrors:
             try:
-                destination_guild = await self.bot.fetch_guild(mirror[2])
-            except:
-                continue
-            try:
-                destination_channel = await destination_guild.fetch_channel(mirror[3])
+                destination_guild = await get_or_fetch_guild(self.bot, mirror[2])
+                destination_channel = await get_or_fetch_channel(destination_guild, mirror[3])
             except:
                 continue
             webhooks = await destination_channel.webhooks()
@@ -281,12 +271,6 @@ class ChannelMirror(Cog):
                     break
             for attachment in message.attachments:
                 repl_message = await webhk.send(content = attachment.url, username = nick + " from " + message.guild.name, avatar_url = message.author.avatar.url, wait = True)
-                #self.cursor.execute(
-                #    """
-                #    Insert INTO messageids (source_guild_id, source_channel_id, source_message_id, destination_guild_id, destination_channel_id, destination_message_id) VALUES (?, ?, ?, ?, ?, ?)
-                #    """,
-                #    (message.guild.id, message.channel.id, message.id, repl_message.guild.id, repl_message.channel.id, repl_message.id)
-                #)
             if content:
                 repl_message = await webhk.send(content = content, username = nick + " from " + message.guild.name, avatar_url = message.author.avatar.url, wait = True)
                 self.cursor.execute(
@@ -310,11 +294,11 @@ class ChannelMirror(Cog):
         messageids = self.cursor.fetchall()
         for messageid in messageids:
             try:
-                destination_guild = await self.bot.fetch_guild(messageid[3])
+                destination_guild = await get_or_fetch_guild(self.bot, messageid[3])
             except:
                 continue
             try:
-                destination_channel = await destination_guild.fetch_channel(messageid[4])
+                destination_channel = await get_or_fetch_channel(destination_guild, messageid[4])
             except:
                 continue
             webhooks = await destination_channel.webhooks()
@@ -338,11 +322,11 @@ class ChannelMirror(Cog):
         messageids = self.cursor.fetchall()
         for messageid in messageids:
             try:
-                destination_guild = await self.bot.fetch_guild(messageid[3])
+                destination_guild = await get_or_fetch_guild(self.bot, messageid[3])
             except:
                 continue
             try:
-                destination_channel = await destination_guild.fetch_channel(messageid[4])
+                destination_channel = await get_or_fetch_channel(destination_guild, messageid[4])
             except:
                 continue
             webhooks = await destination_channel.webhooks()
@@ -368,11 +352,11 @@ class NukeView(View):
             """
         ).fetchall():
             try:
-                destination_guild = await self.bot.fetch_guild(webhook[0])
+                destination_guild = await get_or_fetch_guild(self.bot, webhook[0])
             except:
                 continue
             try:
-                destination_channel = await destination_guild.fetch_channel(webhook[1])
+                destination_channel = await get_or_fetch_channel(destination_guild, webhook[1])
             except:
                 continue
             webhooks = await destination_channel.webhooks()
@@ -401,6 +385,12 @@ class NukeView(View):
     @button(label = "No", style = ButtonStyle.success, custom_id = "no")
     async def no(self, button: Button, interaction: Interaction):
         await interaction.response.edit_message(content = "Canceled", view = None)
+
+async def get_or_fetch_guild(bot, guild_id):
+    return bot.get_guild(guild_id) or await bot.fetch_guild(guild_id)
+
+async def get_or_fetch_channel(guild, channel_id):
+    return guild.get_channel(channel_id) or await guild.fetch_channel(channel_id)
 
 def setup(bot):
     bot.add_cog(ChannelMirror(bot))
