@@ -161,14 +161,14 @@ class ChannelMirror(Cog):
             return
         i = 0
         for mirror in mirrors:
-            try:
-                source_guild = await get_or_fetch_guild(self.bot, mirror[0])
-                source_channel = await get_or_fetch_channel(source_guild, mirror[1])
-                destination_guild = await get_or_fetch_guild(self.bot, mirror[2])
-                destination_channel = await get_or_fetch_channel(destination_guild, mirror[3])
-            except:
-                continue
-            if source_guild == ctx.guild or destination_guild == ctx.guild:
+            if mirror[0] == ctx.guild.id or mirror[2] == ctx.guild.id:
+                try:
+                    source_guild = await get_or_fetch_guild(self.bot, mirror[0])
+                    source_channel = await get_or_fetch_channel(source_guild, mirror[1])
+                    destination_guild = await get_or_fetch_guild(self.bot, mirror[2])
+                    destination_channel = await get_or_fetch_channel(destination_guild, mirror[3])
+                except:
+                    continue
                 i += 1
                 if i == int(link_number):
                     self.cursor.execute(
@@ -218,14 +218,14 @@ class ChannelMirror(Cog):
         message = "Channel Mirrors:\n"
         i = 0
         for mirror in mirrors:
-            try:
-                source_guild = await get_or_fetch_guild(self.bot, mirror[0])
-                source_channel = await get_or_fetch_channel(source_guild, mirror[1])
-                destination_guild = await get_or_fetch_guild(self.bot, mirror[2])
-                destination_channel = await get_or_fetch_channel(destination_guild, mirror[3])
-            except:
-                continue
-            if source_guild == ctx.guild or destination_guild == ctx.guild:
+            if mirror[0] == ctx.guild.id or mirror[2] == ctx.guild.id:
+                try:
+                    source_guild = await get_or_fetch_guild(self.bot, mirror[0])
+                    source_channel = await get_or_fetch_channel(source_guild, mirror[1])
+                    destination_guild = await get_or_fetch_guild(self.bot, mirror[2])
+                    destination_channel = await get_or_fetch_channel(destination_guild, mirror[3])
+                except:
+                    continue
                 i += 1
                 message += f"{i}. Mirror from {source_channel.mention} to {destination_channel.mention}\n"
         await ctx.edit(content = message)
@@ -295,9 +295,6 @@ class ChannelMirror(Cog):
         for messageid in messageids:
             try:
                 destination_guild = await get_or_fetch_guild(self.bot, messageid[3])
-            except:
-                continue
-            try:
                 destination_channel = await get_or_fetch_channel(destination_guild, messageid[4])
             except:
                 continue
@@ -323,9 +320,6 @@ class ChannelMirror(Cog):
         for messageid in messageids:
             try:
                 destination_guild = await get_or_fetch_guild(self.bot, messageid[3])
-            except:
-                continue
-            try:
                 destination_channel = await get_or_fetch_channel(destination_guild, messageid[4])
             except:
                 continue
@@ -353,9 +347,6 @@ class NukeView(View):
         ).fetchall():
             try:
                 destination_guild = await get_or_fetch_guild(self.bot, webhook[0])
-            except:
-                continue
-            try:
                 destination_channel = await get_or_fetch_channel(destination_guild, webhook[1])
             except:
                 continue
