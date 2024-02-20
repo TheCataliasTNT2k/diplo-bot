@@ -61,6 +61,9 @@ class ChannelMirror(Cog):
         destination_channel = await get_or_fetch_channel(ctx, destination_guild, destination_channel_id)
         if not destination_channel:
             return
+        if destination_channel.permissions_for(ctx.author).administrator == False:
+            await ctx.respond("You don't have permission to create a mirror in destination guild", ephemeral = True)
+            return
         if destination_channel.type != ChannelType.text:
             await ctx.respond("Destination channel is not a text channel", ephemeral = True)
             return
