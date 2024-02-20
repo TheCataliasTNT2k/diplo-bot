@@ -6,10 +6,11 @@ from discord import (
     NotFound,
     ChannelType,
     Webhook,
-    Guild
+    Guild,
+    ButtonStyle,
+    Interaction
 )
 from discord.ui import View, Button, button
-from discord import ButtonStyle, Interaction
 from discord.commands import Option
 from discord.ext.commands import Cog
 import mariadb
@@ -149,23 +150,23 @@ class ChannelMirror(Cog):
         mirror = mirrors[link_number]
         self.cursor.execute(
             "DELETE FROM channelmirror WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
-            (mirror[1].id, mirror[2].id, mirror[3].id, mirror[4].id)
+            (mirror[0].id, mirror[1].id, mirror[2].id, mirror[3].id)
         )
         self.cursor.execute(
             "DELETE FROM messageids WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
-            (mirror[1].id, mirror[2].id, mirror[3].id, mirror[4].id)
+            (mirror[0].id, mirror[1].id, mirror[2].id, mirror[3].id)
         )
-        self.delete_webhook(mirror[3], mirror[4])
+        await self.delete_webhook(mirror[2], mirror[3])
         self.db.commit()
         self.cursor.execute(
             "SELECT * FROM channelmirror WHERE source_guild_id = ? AND source_channel_id = ?",
-            (mirror[1].id, mirror[2].id)
+            (mirror[0].id, mirror[1].id)
         )
         if not self.cursor.fetchone():
-            if mirror[1].id in self.channelmirror_cache.keys():
-                if mirror[2].id in self.channelmirror_cache[mirror[1].id]:
-                    self.channelmirror_cache[mirror[1].id].remove(mirror[2].id)
-        await ctx.respond(content = f"Deleted mirror from {mirror[2].mention} to {mirror[4].mention}", ephemeral = True)
+            if mirror[0].id in self.channelmirror_cache.keys():
+                if mirror[1].id in self.channelmirror_cache[mirror[0].id]:
+                    self.channelmirror_cache[mirror[0].id].remove(mirror[1].id)
+        await ctx.respond(content = f"Deleted mirror from {mirror[1].mention} to {mirror[3].mention}", ephemeral = True)
 
     @channelmirror.command(name = "list", description = "List all mirrors")
     async def list(self, ctx):
@@ -178,10 +179,10 @@ class ChannelMirror(Cog):
         for i, mirror in enumerate(mirrors):
                 source_channel_mention = "Unknown"
                 destination_channel_mention = "Unknown"
-                if mirror[1] and mirror[2]:
-                    source_channel_mention = mirror[2].mention
-                if mirror[3] and mirror[4]:
-                    destination_channel_mention = mirror[4].mention
+                if mirror[0] and mirror[1]:
+                    source_channel_mention = mirror[1].mention
+                if mirror[2] and mirror[3]:
+                    destination_channel_mention = mirror[3].mention
                 message += f"{i + 1}. Mirror from {source_channel_mention} to {destination_channel_mention}\n"
         await ctx.edit(content = message)
 
@@ -300,6 +301,11 @@ class ChannelMirror(Cog):
                 self.webhook_cache[destination_guild.id].pop(destination_channel.id)
                 await self.get_or_fetch_webhook(destination_guild.id, destination_channel.id)
                 await webhook.delete_message(messageid[5])
+            self.cursor.execute(
+                "DELETE FROM messageids WHERE source_guild_id = ? AND source_channel_id = ? AND source_message_id = ? AND destination_guild_id = ? AND destination_channel_id = ? AND destination_message_id = ?",
+                (messageid[0], messageid[1], messageid[2], messageid[3], messageid[4], messageid[5])
+            )
+        self.db.commit()
 
     async def create_webhook(self, destination_guild, destination_channel):
         self.cursor.execute(
