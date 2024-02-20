@@ -4,7 +4,9 @@ from discord import (
     Permissions,
     Forbidden,
     NotFound,
-    ChannelType
+    ChannelType,
+    Webhook,
+    Guild
 )
 from discord.ui import View, Button, button
 from discord import ButtonStyle, Interaction
@@ -223,7 +225,12 @@ class ChannelMirror(Cog):
             files = []
             for attachment in message.attachments:
                 files.append(await attachment.to_file())
-            repl_message = await webhook.send(content = content, embeds = message.embeds, files = files, username = nick + " from " + message.guild.name, avatar_url = message.author.avatar.url, wait = True)
+            try:
+                repl_message = await webhook.send(content = content, embeds = message.embeds, files = files, username = nick + " from " + message.guild.name, avatar_url = message.author.avatar.url, wait = True)
+            except:
+                self.webhook_cache[destination_guild.id].pop(destination_channel.id)
+                await self.get_or_fetch_webhook(destination_guild.id, destination_channel.id)
+                repl_message = await webhook.send(content = content, embeds = message.embeds, files = files, username = nick + " from " + message.guild.name, avatar_url = message.author.avatar.url, wait = True)
             self.cursor.execute(
                 "Insert INTO messageids (source_guild_id, source_channel_id, source_message_id, destination_guild_id, destination_channel_id, destination_message_id) VALUES (?, ?, ?, ?, ?, ?)",
                 (message.guild.id, message.channel.id, message.id, repl_message.guild.id, repl_message.channel.id, repl_message.id)
@@ -263,7 +270,12 @@ class ChannelMirror(Cog):
             files = []
             for attachment in message.attachments:
                 files.append(await attachment.to_file())
-            await webhook.edit_message(messageid[5], content = content, embeds = message.embeds, files = files)
+            try:
+                await webhook.edit_message(messageid[5], content = content, embeds = message.embeds, files = files)
+            except:
+                self.webhook_cache[destination_guild.id].pop(destination_channel.id)
+                await self.get_or_fetch_webhook(destination_guild.id, destination_channel.id)
+                await webhook.edit_message(messageid[5], content = content, embeds = message.embeds, files = files)
 
     @Cog.listener("on_raw_message_delete")
     async def on_message_delete(self, message):
@@ -282,7 +294,12 @@ class ChannelMirror(Cog):
             webhook = await self.get_or_fetch_webhook(destination_guild.id, destination_channel.id)
             if not webhook:
                 continue
-            await webhook.delete_message(messageid[5])
+            try:
+                await webhook.delete_message(messageid[5])
+            except:
+                self.webhook_cache[destination_guild.id].pop(destination_channel.id)
+                await self.get_or_fetch_webhook(destination_guild.id, destination_channel.id)
+                await webhook.delete_message(messageid[5])
 
     async def create_webhook(self, destination_guild, destination_channel):
         self.cursor.execute(
@@ -336,7 +353,7 @@ class ChannelMirror(Cog):
         order.sort()
         return [out[i] for i in order]
 
-    async def get_or_fetch_webhook(self, guild_id, channel_id):
+    async def get_or_fetch_webhook(self, guild_id, channel_id) -> Webhook:
         if guild_id not in self.webhook_cache.keys():
             self.webhook_cache[guild_id] = {}
         if channel_id in self.webhook_cache[guild_id].keys():
@@ -378,7 +395,7 @@ class ChannelMirror(Cog):
             self.webhook_cache[guild_id][channel_id] = webhook
             return webhook
 
-async def get_or_fetch_guild(bot, ctx, guild_id):
+async def get_or_fetch_guild(bot, ctx, guild_id) -> Guild:
     try:
         return bot.get_guild(guild_id) or await bot.fetch_guild(guild_id)
     except Forbidden:
@@ -394,7 +411,7 @@ async def get_or_fetch_guild(bot, ctx, guild_id):
             await ctx.respond("An error occurred", ephemeral = True)
         return
 
-async def get_or_fetch_channel(ctx, guild, channel_id):
+async def get_or_fetch_channel(ctx, guild, channel_id) -> TextChannel:
     try:
         return guild.get_channel(channel_id) or await guild.fetch_channel(channel_id)
     except Forbidden:
