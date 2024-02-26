@@ -13,39 +13,17 @@ from discord import (
 from discord.ui import View, Button, button
 from discord.commands import Option
 from discord.ext.commands import Cog
-import mariadb
-import sys
-from login import loginData
 
 class ChannelMirror(Cog):
     def __init__(self, bot):
         self.bot = bot
-        try:
-            self.db = mariadb.connect(user=loginData.user, password=loginData.password, host=loginData.host, port=loginData.port, database="channelmirror")
-        except mariadb.Error as e:
-            print(f"Error connecting to MariaDB Platform: {e}")
-            while True:
-                print("Do you want to try again? (y/n)")
-                answer = input()
-                if answer == "n":
-                    sys.exit()
-                elif answer == "y":
-                    try:
-                        self.db = mariadb.connect(user=loginData.user, password=loginData.password, host=loginData.host, port=loginData.port, database="channelmirror")
-                        break
-                    except mariadb.Error as e:
-                        print(f"Error connecting to MariaDB Platform: {e}")
-                else:
-                    print("Invalid input")
-        self.db.autocommit = False
-        self.cursor = self.db.cursor()
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS channelmirror (channelmirror_id INT NOT NULL AUTO_INCREMENT, source_guild_id BIGINT, source_channel_id BIGINT, destination_guild_id BIGINT, destination_channel_id BIGINT, Primary Key (channelmirror_id))")
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS messageids (source_guild_id BIGINT, source_channel_id BIGINT, source_message_id BIGINT, destination_guild_id BIGINT, destination_channel_id BIGINT, destination_message_id BIGINT)")
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS webhooks (guild_id BIGINT, channel_id BIGINT, webhook_id BIGINT)")
-        self.db.commit()
+        self.bot.cur.execute("CREATE TABLE IF NOT EXISTS cmr_mirrors (channelmirror_id INT NOT NULL AUTO_INCREMENT, source_guild_id BIGINT UNSIGNED, source_channel_id BIGINT UNSIGNED, destination_guild_id BIGINT UNSIGNED, destination_channel_id BIGINT UNSIGNED, Primary Key (channelmirror_id))")
+        self.bot.cur.execute("CREATE TABLE IF NOT EXISTS cmr_msgids (source_guild_id BIGINT UNSIGNED, source_channel_id BIGINT UNSIGNED, source_message_id BIGINT UNSIGNED, destination_guild_id BIGINT UNSIGNED, destination_channel_id BIGINT UNSIGNED, destination_message_id BIGINT UNSIGNED)")
+        self.bot.cur.execute("CREATE TABLE IF NOT EXISTS cmr_webhooks (guild_id BIGINT UNSIGNED, channel_id BIGINT UNSIGNED, webhook_id BIGINT UNSIGNED)")
+        self.bot.con.commit()
         self.channelmirror_cache = {}
-        self.cursor.execute("SELECT * FROM channelmirror")
-        for mirror in self.cursor:
+        self.bot.cur.execute("SELECT * FROM cmr_mirrors")
+        for mirror in self.bot.cur:
             if mirror[1] not in self.channelmirror_cache.keys():
                 self.channelmirror_cache[mirror[1]] = []
             self.channelmirror_cache[mirror[1]].append(mirror[2])
@@ -70,22 +48,22 @@ class ChannelMirror(Cog):
         if destination_channel.type != ChannelType.text:
             await ctx.respond("Destination channel is not a text channel", ephemeral = True)
             return
-        self.cursor.execute(
-            "SELECT * FROM channelmirror WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
+        self.bot.cur.execute(
+            "SELECT * FROM cmr_mirrors WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
             (source_channel.guild.id, source_channel.id, destination_channel_guild_id, destination_channel_id)
         )
-        if self.cursor.fetchone():
+        if self.bot.cur.fetchall():
             await ctx.respond("Mirror already exists", ephemeral = True)
             return
         if destination_channel.permissions_for(await destination_guild.fetch_member(1203722669376409611)).send_messages == False:
             await ctx.respond("I don't have permission to send messages in destination channel", ephemeral = True)
             return
         await self.create_webhook(destination_guild, destination_channel)
-        self.cursor.execute(
-            "INSERT INTO channelmirror (source_guild_id, source_channel_id, destination_guild_id, destination_channel_id) VALUES (?, ?, ?, ?)",
+        self.bot.cur.execute(
+            "INSERT INTO cmr_mirrors (source_guild_id, source_channel_id, destination_guild_id, destination_channel_id) VALUES (?, ?, ?, ?)",
             (source_channel.guild.id, source_channel.id, destination_guild.id, destination_channel.id)
         )
-        self.db.commit()
+        self.bot.con.commit()
         if source_channel.guild.id not in self.channelmirror_cache.keys():
             self.channelmirror_cache[source_channel.guild.id] = []
         if source_channel.id not in self.channelmirror_cache[source_channel.guild.id]:
@@ -109,28 +87,28 @@ class ChannelMirror(Cog):
         if destination_channel.type != ChannelType.text:
             await ctx.respond("Destination channel is not a text channel", ephemeral = True)
             return
-        self.cursor.execute(
-            "SELECT * FROM channelmirror WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
+        self.bot.cur.execute(
+            "SELECT * FROM cmr_mirrors WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
             (source_channel.guild.id, source_channel.id, destination_channel_guild_id, destination_channel_id)
         )
-        if not self.cursor.fetchone():
+        if not self.bot.cur.fetchall():
             await ctx.respond("Mirror not found", ephemeral = True)
             return
-        self.cursor.execute(
-            "DELETE FROM channelmirror WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
+        self.bot.cur.execute(
+            "DELETE FROM cmr_mirrors WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
             (source_channel.guild.id, source_channel.id, destination_channel_guild_id, destination_channel_id)
         )
-        self.cursor.execute(
-            "DELETE FROM messageids WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
+        self.bot.cur.execute(
+            "DELETE FROM cmr_msgids WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
             (source_channel.guild.id, source_channel.id, destination_guild.id, destination_channel.id)
         )
         await self.delete_webhook(destination_guild, destination_channel)
-        self.db.commit()
-        self.cursor.execute(
-            "SELECT * FROM channelmirror WHERE source_guild_id = ? AND source_channel_id = ?",
+        self.bot.con.commit()
+        self.bot.cur.execute(
+            "SELECT * FROM cmr_mirrors WHERE source_guild_id = ? AND source_channel_id = ?",
             (source_channel.guild.id, source_channel.id)
         )
-        if not self.cursor.fetchone():
+        if not self.bot.cur.fetchall():
             if source_channel.guild.id in self.channelmirror_cache.keys():
                 if source_channel.id in self.channelmirror_cache[source_channel.guild.id]:
                     self.channelmirror_cache[source_channel.guild.id].remove(source_channel.id)
@@ -148,21 +126,21 @@ class ChannelMirror(Cog):
         if link_number < 0 or link_number >= len(mirrors):
             await ctx.respond(content = "Invalid link number", ephemeral = True)
         mirror = mirrors[link_number]
-        self.cursor.execute(
-            "DELETE FROM channelmirror WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
+        self.bot.cur.execute(
+            "DELETE FROM cmr_mirrors WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
             (mirror[0].id, mirror[1].id, mirror[2].id, mirror[3].id)
         )
-        self.cursor.execute(
-            "DELETE FROM messageids WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
+        self.bot.cur.execute(
+            "DELETE FROM cmr_msgids WHERE source_guild_id = ? AND source_channel_id = ? AND destination_guild_id = ? AND destination_channel_id = ?",
             (mirror[0].id, mirror[1].id, mirror[2].id, mirror[3].id)
         )
         await self.delete_webhook(mirror[2], mirror[3])
-        self.db.commit()
-        self.cursor.execute(
-            "SELECT * FROM channelmirror WHERE source_guild_id = ? AND source_channel_id = ?",
+        self.bot.con.commit()
+        self.bot.cur.execute(
+            "SELECT * FROM cmr_mirrors WHERE source_guild_id = ? AND source_channel_id = ?",
             (mirror[0].id, mirror[1].id)
         )
-        if not self.cursor.fetchone():
+        if not self.bot.cur.fetchall():
             if mirror[0].id in self.channelmirror_cache.keys():
                 if mirror[1].id in self.channelmirror_cache[mirror[0].id]:
                     self.channelmirror_cache[mirror[0].id].remove(mirror[1].id)
@@ -196,7 +174,7 @@ class ChannelMirror(Cog):
 
     @channelmirror.command(name = "nuke", description = "List all Servers of wich Bot is Member")
     async def nuke(self, ctx):
-        await ctx.respond("Do you really want to Nuke all Channel Mirrors?", ephemeral = True, view = NukeView(self.bot, self.db, self.cursor))
+        await ctx.respond("Do you really want to Nuke all Channel Mirrors?", ephemeral = True, view = NukeView(self.bot))
 
     @Cog.listener("on_message")
     async def on_message(self, message):
@@ -206,11 +184,11 @@ class ChannelMirror(Cog):
             return
         if message.channel.id not in self.channelmirror_cache[message.guild.id]:
             return
-        self.cursor.execute(
-            "SELECT * FROM channelmirror WHERE source_guild_id = ? AND source_channel_id = ?",
+        self.bot.cur.execute(
+            "SELECT * FROM cmr_mirrors WHERE source_guild_id = ? AND source_channel_id = ?",
             (message.guild.id, message.channel.id)
         )
-        mirrors = self.cursor.fetchall()
+        mirrors = self.bot.cur.fetchall()
         content = message.content.replace("@everyone", "everyone").replace("@here", "here")
         nick = message.author.nick or message.author.display_name
         for mirror in mirrors:
@@ -232,11 +210,11 @@ class ChannelMirror(Cog):
                 self.webhook_cache[destination_guild.id].pop(destination_channel.id)
                 await self.get_or_fetch_webhook(destination_guild.id, destination_channel.id)
                 repl_message = await webhook.send(content = content, embeds = message.embeds, files = files, username = nick + " from " + message.guild.name, avatar_url = message.author.avatar.url, wait = True)
-            self.cursor.execute(
-                "Insert INTO messageids (source_guild_id, source_channel_id, source_message_id, destination_guild_id, destination_channel_id, destination_message_id) VALUES (?, ?, ?, ?, ?, ?)",
+            self.bot.cur.execute(
+                "Insert INTO cmr_msgids (source_guild_id, source_channel_id, source_message_id, destination_guild_id, destination_channel_id, destination_message_id) VALUES (?, ?, ?, ?, ?, ?)",
                 (message.guild.id, message.channel.id, message.id, repl_message.guild.id, repl_message.channel.id, repl_message.id)
             )
-        self.db.commit()
+        self.bot.con.commit()
 
     @Cog.listener("on_raw_message_edit")
     async def on_message_edit(self, message):
@@ -252,11 +230,11 @@ class ChannelMirror(Cog):
         message = await source_channel.fetch_message(message.message_id)
         if message.author.bot:
             return
-        self.cursor.execute(
-            "SELECT * FROM messageids WHERE source_guild_id = ? AND source_channel_id = ? AND source_message_id = ?",
+        self.bot.cur.execute(
+            "SELECT * FROM cmr_msgids WHERE source_guild_id = ? AND source_channel_id = ? AND source_message_id = ?",
             (message.guild.id, message.channel.id, message.id)
         )
-        messageids = self.cursor.fetchall()
+        messageids = self.bot.cur.fetchall()
         content = message.content.replace("@everyone", "everyone").replace("@here", "here")
         for messageid in messageids:
             destination_guild = await get_or_fetch_guild(self.bot, None, messageid[3])
@@ -280,11 +258,11 @@ class ChannelMirror(Cog):
 
     @Cog.listener("on_raw_message_delete")
     async def on_message_delete(self, message):
-        self.cursor.execute(
-            "SELECT * FROM messageids WHERE source_guild_id = ? AND source_channel_id = ? AND source_message_id = ?",
+        self.bot.cur.execute(
+            "SELECT * FROM cmr_msgids WHERE source_guild_id = ? AND source_channel_id = ? AND source_message_id = ?",
             (message.guild_id, message.channel_id, message.message_id)
         )
-        messageids = self.cursor.fetchall()
+        messageids = self.bot.cur.fetchall()
         for messageid in messageids:
             destination_guild = await get_or_fetch_guild(self.bot, None, messageid[3])
             if not destination_guild:
@@ -301,21 +279,21 @@ class ChannelMirror(Cog):
                 self.webhook_cache[destination_guild.id].pop(destination_channel.id)
                 await self.get_or_fetch_webhook(destination_guild.id, destination_channel.id)
                 await webhook.delete_message(messageid[5])
-            self.cursor.execute(
-                "DELETE FROM messageids WHERE source_guild_id = ? AND source_channel_id = ? AND source_message_id = ? AND destination_guild_id = ? AND destination_channel_id = ? AND destination_message_id = ?",
+            self.bot.cur.execute(
+                "DELETE FROM cmr_msgids WHERE source_guild_id = ? AND source_channel_id = ? AND source_message_id = ? AND destination_guild_id = ? AND destination_channel_id = ? AND destination_message_id = ?",
                 (messageid[0], messageid[1], messageid[2], messageid[3], messageid[4], messageid[5])
             )
-        self.db.commit()
+        self.bot.con.commit()
 
     async def create_webhook(self, destination_guild, destination_channel):
-        self.cursor.execute(
-            "SELECT * FROM webhooks WHERE guild_id = ? AND channel_id = ?",
+        self.bot.cur.execute(
+            "SELECT * FROM cmr_webhooks WHERE guild_id = ? AND channel_id = ?",
             (destination_guild.id, destination_channel.id)
         )
-        if not self.cursor.fetchone():
+        if not self.bot.cur.fetchall():
             webhook = await destination_channel.create_webhook(name = "ChannelMirror", reason = "ChannelMirror webhook creation")
-            self.cursor.execute(
-                "INSERT INTO webhooks (guild_id, channel_id, webhook_id) VALUES (?, ?, ?)",
+            self.bot.cur.execute(
+                "INSERT INTO cmr_webhooks (guild_id, channel_id, webhook_id) VALUES (?, ?, ?)",
                 (destination_guild.id, destination_channel.id, webhook.id)
             )
             if destination_guild.id not in self.webhook_cache.keys():
@@ -323,41 +301,39 @@ class ChannelMirror(Cog):
             self.webhook_cache[destination_guild.id][destination_channel.id] = webhook
 
     async def delete_webhook(self, destination_guild, destination_channel):
-        self.cursor.execute(
-            "SELECT * FROM channelmirror WHERE destination_guild_id = ? AND destination_channel_id = ?",
+        self.bot.cur.execute(
+            "SELECT * FROM cmr_mirrors WHERE destination_guild_id = ? AND destination_channel_id = ?",
             (destination_guild.id, destination_channel.id)
         )
-        if not self.cursor.fetchone():
+        if not self.bot.cur.fetchall():
             webhooks = await destination_channel.webhooks()
+            self.bot.cur.execute(
+                "SELECT webhook_id FROM cmr_webhooks WHERE guild_id = ? AND channel_id = ?",
+                (destination_guild.id, destination_channel.id)
+            )
+            webhook_id = self.bot.cur.fetchall()[0][0]
             for webhook in webhooks:
-                self.cursor.execute(
-                    "SELECT webhook_id FROM webhooks WHERE guild_id = ? AND channel_id = ?",
-                    (destination_guild.id, destination_channel.id)
-                )
-                if webhook.id == self.cursor.fetchone()[0]:
+                if webhook.id == webhook_id:
                     await webhook.delete()
                     break
-            self.cursor.execute(
-                "DELETE FROM webhooks WHERE guild_id = ? AND channel_id = ?",
+            self.bot.cur.execute(
+                "DELETE FROM cmr_webhooks WHERE guild_id = ? AND channel_id = ?",
                 (destination_guild.id, destination_channel.id)
             )
             self.webhook_cache[destination_guild.id].pop(destination_channel.id)
 
     async def get_channelmirrors(self, guild_id):
-        self.cursor.execute("SELECT * FROM channelmirror")
-        mirrors = self.cursor.fetchall()
-        out = {}
-        order = []
+        self.bot.cur.execute("SELECT * FROM cmr_mirrors ORDER BY channelmirror_id ASC")
+        mirrors = self.bot.cur.fetchall()
+        out = []
         for mirror in mirrors:
             if mirror[1] == guild_id or mirror[3] == guild_id:
                 source_guild = await get_or_fetch_guild(self.bot, None, mirror[1])
                 destination_guild = await get_or_fetch_guild(self.bot, None, mirror[3])
                 source_channel = await get_or_fetch_channel(None, source_guild, mirror[2])
                 destination_channel = await get_or_fetch_channel(None, destination_guild, mirror[4])
-                out[mirror[0]] = (source_guild, source_channel, destination_guild, destination_channel)
-                order.append(mirror[0])
-        order.sort()
-        return [out[i] for i in order]
+                out.append((source_guild, source_channel, destination_guild, destination_channel))
+        return out
 
     async def get_or_fetch_webhook(self, guild_id, channel_id) -> Webhook:
         if guild_id not in self.webhook_cache.keys():
@@ -371,35 +347,34 @@ class ChannelMirror(Cog):
         if not destination_channel:
             return
         webhooks = await destination_channel.webhooks()
-        self.cursor.execute(
-            "SELECT webhook_id FROM webhooks WHERE guild_id = ? AND channel_id = ?",
+        self.bot.cur.execute(
+            "SELECT webhook_id FROM cmr_webhooks WHERE guild_id = ? AND channel_id = ?",
             (guild_id, channel_id)
         )
-        webhook_id = self.cursor.fetchone()
+        webhook_id = self.bot.cur.fetchall()[0][0]
         if webhook_id:
             for webhook in webhooks:
-                if webhook.id == webhook_id[0]:
+                if webhook.id == webhook_id:
                     self.webhook_cache[guild_id][channel_id] = webhook
                     return webhook
-        if channel_id not in self.webhook_cache[guild_id].keys():
-            webhook = await destination_channel.create_webhook(name = "ChannelMirror", reason = "ChannelMirror webhook creation")
-            self.cursor.execute(
-                "SELECT * FROM webhooks WHERE guild_id = ? AND channel_id = ?",
-                (guild_id, channel_id)
+        webhook = await destination_channel.create_webhook(name = "ChannelMirror", reason = "ChannelMirror webhook creation")
+        self.bot.cur.execute(
+            "SELECT * FROM cmr_webhooks WHERE guild_id = ? AND channel_id = ?",
+            (guild_id, channel_id)
+        )
+        if self.bot.cur.fetchall():
+            self.bot.cur.execute(
+                "UPDATE cmr_webhooks SET webhook_id = ? WHERE guild_id = ? AND channel_id = ?",
+                (webhook.id, guild_id, channel_id)
             )
-            if self.cursor.fetchone():
-                self.cursor.execute(
-                    "UPDATE webhooks SET webhook_id = ? WHERE guild_id = ? AND channel_id = ?",
-                    (webhook.id, guild_id, channel_id)
-                )
-            else:
-                self.cursor.execute(
-                    "INSERT INTO webhooks (guild_id, channel_id, webhook_id) VALUES (?, ?, ?)",
-                    (guild_id, channel_id, webhook.id)
-                )
-            self.db.commit()
-            self.webhook_cache[guild_id][channel_id] = webhook
-            return webhook
+        else:
+             self.bot.cur.execute(
+               "INSERT INTO cmr_webhooks (guild_id, channel_id, webhook_id) VALUES (?, ?, ?)",
+                (guild_id, channel_id, webhook.id)
+            )
+        self.bot.con.commit()
+        self.webhook_cache[guild_id][channel_id] = webhook
+        return webhook
 
 async def get_or_fetch_guild(bot, ctx, guild_id) -> Guild:
     try:
@@ -434,16 +409,14 @@ async def get_or_fetch_channel(ctx, guild, channel_id) -> TextChannel:
         return
 
 class NukeView(View):
-    def __init__(self, bot, db, cursor):
+    def __init__(self, bot):
         super().__init__(timeout=5)
         self.bot = bot
-        self.db = db
-        self.cursor = cursor
 
     @button(label = "Yes", style = ButtonStyle.danger, custom_id = "yes")
     async def yes(self, button: Button, interaction: Interaction):
         await self.message.delete()
-        await interaction.response.send_message(content = "Do you REALLY want to Nuke ALL Channel Mirrors?", view = NukeView2(self.bot, self.db, self.cursor), ephemeral=True)
+        await interaction.response.send_message(content = "Do you REALLY want to Nuke ALL Channel Mirrors?", view = NukeView2(self.bot), ephemeral=True)
         self.stop()
 
     @button(label = "No", style = ButtonStyle.success, custom_id = "no")
@@ -455,16 +428,14 @@ class NukeView(View):
         await self.message.edit(content = "Timed out", view = None)
 
 class NukeView2(View):
-    def __init__(self, bot, db, cursor):
+    def __init__(self, bot):
         super().__init__(timeout=5)
         self.bot = bot
-        self.db = db
-        self.cursor = cursor
 
     @button(label = "Yes", style = ButtonStyle.danger, custom_id = "yes")
     async def yes(self, button: Button, interaction: Interaction):
-        self.cursor.execute("SELECT * FROM webhooks")
-        for webhook in self.cursor.fetchall():
+        self.bot.cur.execute("SELECT * FROM cmr_webhooks")
+        for webhook in self.bot.cur.fetchall():
             destination_guild = await get_or_fetch_guild(self.bot, None, webhook[0])
             if not destination_guild:
                 continue
@@ -472,18 +443,19 @@ class NukeView2(View):
             if not destination_channel:
                 continue
             webhooks = await destination_channel.webhooks()
+            self.bot.cur.execute(
+                "SELECT webhook_id FROM cmr_webhooks WHERE guild_id = ? AND channel_id = ?",
+                (destination_guild.id, destination_channel.id)
+            )
+            webhook_id = self.bot.cur.fetchall()[0][0]
             for webhook in webhooks:
-                self.cursor.execute(
-                    "SELECT webhook_id FROM webhooks WHERE guild_id = ? AND channel_id = ?",
-                    (destination_guild.id, destination_channel.id)
-                )
-                if webhook.id == self.cursor.fetchone()[0]:
+                if webhook.id == webhook_id:
                     await webhook.delete()
                     break
-        self.cursor.execute("DELETE FROM channelmirror")
-        self.cursor.execute("DELETE FROM messageids")
-        self.cursor.execute("DELETE FROM webhooks")
-        self.db.commit()
+        self.bot.cur.execute("DELETE FROM cmr_mirrors")
+        self.bot.cur.execute("DELETE FROM cmr_msgids")
+        self.bot.cur.execute("DELETE FROM cmr_webhooks")
+        self.bot.con.commit()
         await self.message.delete()
         await interaction.response.send_message(content = "Nuked all Channel Mirrors", view = None, ephemeral=True)
         self.stop()
