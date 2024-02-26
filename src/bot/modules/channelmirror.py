@@ -63,7 +63,12 @@ class ChannelMirror(Cog):
             "INSERT INTO cmr_mirrors (source_guild_id, source_channel_id, destination_guild_id, destination_channel_id) VALUES (?, ?, ?, ?)",
             (source_channel.guild.id, source_channel.id, destination_guild.id, destination_channel.id)
         )
-        self.bot.con.commit()
+        try:
+            self.bot.con.commit()
+        except:
+            self.bot.con.rollback()
+            await ctx.respond("An error occurred", ephemeral = True)
+            return
         if source_channel.guild.id not in self.channelmirror_cache.keys():
             self.channelmirror_cache[source_channel.guild.id] = []
         if source_channel.id not in self.channelmirror_cache[source_channel.guild.id]:
@@ -103,7 +108,12 @@ class ChannelMirror(Cog):
             (source_channel.guild.id, source_channel.id, destination_guild.id, destination_channel.id)
         )
         await self.delete_webhook(destination_guild, destination_channel)
-        self.bot.con.commit()
+        try:
+            self.bot.con.commit()
+        except:
+            self.bot.con.rollback()
+            await ctx.respond("An error occurred", ephemeral = True)
+            return
         self.bot.cur.execute(
             "SELECT * FROM cmr_mirrors WHERE source_guild_id = ? AND source_channel_id = ?",
             (source_channel.guild.id, source_channel.id)
@@ -135,7 +145,12 @@ class ChannelMirror(Cog):
             (mirror[0].id, mirror[1].id, mirror[2].id, mirror[3].id)
         )
         await self.delete_webhook(mirror[2], mirror[3])
-        self.bot.con.commit()
+        try:
+            self.bot.con.commit()
+        except:
+            self.bot.con.rollback()
+            await ctx.respond("An error occurred", ephemeral = True)
+            return
         self.bot.cur.execute(
             "SELECT * FROM cmr_mirrors WHERE source_guild_id = ? AND source_channel_id = ?",
             (mirror[0].id, mirror[1].id)
@@ -214,7 +229,10 @@ class ChannelMirror(Cog):
                 "Insert INTO cmr_msgids (source_guild_id, source_channel_id, source_message_id, destination_guild_id, destination_channel_id, destination_message_id) VALUES (?, ?, ?, ?, ?, ?)",
                 (message.guild.id, message.channel.id, message.id, repl_message.guild.id, repl_message.channel.id, repl_message.id)
             )
-        self.bot.con.commit()
+        try:
+            self.bot.con.commit()
+        except:
+            self.bot.con.rollback()
 
     @Cog.listener("on_raw_message_edit")
     async def on_message_edit(self, message):
@@ -283,7 +301,10 @@ class ChannelMirror(Cog):
                 "DELETE FROM cmr_msgids WHERE source_guild_id = ? AND source_channel_id = ? AND source_message_id = ? AND destination_guild_id = ? AND destination_channel_id = ? AND destination_message_id = ?",
                 (messageid[0], messageid[1], messageid[2], messageid[3], messageid[4], messageid[5])
             )
-        self.bot.con.commit()
+        try:
+            self.bot.con.commit()
+        except:
+            self.bot.con.rollback()
 
     async def create_webhook(self, destination_guild, destination_channel):
         self.bot.cur.execute(
@@ -372,7 +393,10 @@ class ChannelMirror(Cog):
                "INSERT INTO cmr_webhooks (guild_id, channel_id, webhook_id) VALUES (?, ?, ?)",
                 (guild_id, channel_id, webhook.id)
             )
-        self.bot.con.commit()
+        try:
+            self.bot.con.commit()
+        except:
+            self.bot.con.rollback()
         self.webhook_cache[guild_id][channel_id] = webhook
         return webhook
 
@@ -455,7 +479,14 @@ class NukeView2(View):
         self.bot.cur.execute("DELETE FROM cmr_mirrors")
         self.bot.cur.execute("DELETE FROM cmr_msgids")
         self.bot.cur.execute("DELETE FROM cmr_webhooks")
-        self.bot.con.commit()
+        try:
+            self.bot.con.commit()
+        except:
+            self.bot.con.rollback()
+            await self.message.delete()
+            await interaction.response.send_message(content = "An error occurred", view = None, ephemeral=True)
+            self.stop()
+            return
         await self.message.delete()
         await interaction.response.send_message(content = "Nuked all Channel Mirrors", view = None, ephemeral=True)
         self.stop()
