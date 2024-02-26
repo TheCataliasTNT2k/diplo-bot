@@ -3,7 +3,7 @@ import mariadb
 import os
 import time
 
-class AllTheBots(discord.Bot):
+class DiploBot(discord.Bot):
 
     async def on_ready(self):
         print(f"{self.user} is ready and online!")
@@ -33,5 +33,5 @@ class AllTheBots(discord.Bot):
             print(f"Done!")
 
 print("Starting bot...")
-bot = AllTheBots()
+bot = DiploBot()
 bot.run(os.environ['BOT_TOKEN'])
